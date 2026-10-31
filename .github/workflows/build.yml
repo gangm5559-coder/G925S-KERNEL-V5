@@ -1,4 +1,4 @@
-name: Build LOS23 Kernel zerolteskt G925S - v6 Real Branches
+name: Build LOS23 Kernel zerolteskt G925S - v7 Correct Repo
 
 on:
   workflow_dispatch:
@@ -29,38 +29,30 @@ jobs:
           if ls boot_part_* 1>/dev/null 2>&1; then cat boot_part_* > boot.img; echo "Merged boot.img"; fi
           ls -lh *.img 2>/dev/null || true
 
-      - name: Download kernel tarball - Real branches lineage-20
+      - name: Download kernel tarball - Correct repo universal7420
         run: |
-          rm -rf kernel.tar.gz kernel android_kernel*
+          rm -rf kernel.tar.gz kernel android_kernel* *universal7420*
           mkdir -p kernel
-          # Real branches from samsungexynos7420 are lineage-20, lineage-20-new, lineage-19.1 etc, NOT lineage-20.0
-          for branch in lineage-20 lineage-20-new lineage-19.1 lineage-18.1 main master; do
-            echo "Trying samsungexynos7420 android_kernel_samsung_exynos7420 branch $branch"
+          # Real repo is android_kernel_samsung_universal7420, NOT exynos7420
+          # Branches: lineage-20, lineage-20-temp from XDA sources
+          for branch in lineage-20 lineage-20-temp lineage-19.1 lineage-18.1 lineage-20-new main master; do
+            echo "Trying samsungexynos7420 android_kernel_samsung_universal7420 branch $branch"
             rm -rf kernel.tar.gz android_kernel*
-            curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_exynos7420/archive/refs/heads/$branch.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && ls && mv android_kernel_samsung_exynos7420-$branch/* kernel/ 2>/dev/null || mv android_kernel_samsung_exynos7420-*/ * kernel/ 2>/dev/null || true
-            if [ -f kernel/Makefile ]; then echo "Success $branch"; break; fi
+            curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_universal7420/archive/refs/heads/$branch.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && ls && mv android_kernel_samsung_universal7420-$branch/* kernel/ 2>/dev/null || mv android_kernel_samsung_universal7420-*/ * kernel/ 2>/dev/null || true
+            if [ -f kernel/Makefile ]; then echo "Success universal7420 $branch"; break; fi
           done
           if [ ! -f kernel/Makefile ]; then
-            echo "Trying LineageOS kernel repo"
-            for branch in lineage-20 lineage-20.0 lineage-21.0 lineage-19.1 main; do
-              echo "Trying LineageOS branch $branch"
+            echo "Trying exynos7420 repo as fallback"
+            for branch in lineage-20 lineage-20-temp lineage-19.1 main; do
+              echo "Trying samsungexynos7420 android_kernel_samsung_exynos7420 branch $branch"
               rm -rf kernel.tar.gz android_kernel*
-              curl -L --retry 3 -f https://github.com/LineageOS/android_kernel_samsung_exynos7420/archive/refs/heads/$branch.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-$branch/* kernel/ 2>/dev/null || mv android_kernel*/ * kernel/ 2>/dev/null || true
-              if [ -f kernel/Makefile ]; then echo "Success LineageOS $branch"; break; fi
-            done
-          fi
-          if [ ! -f kernel/Makefile ]; then
-            echo "Trying universal7420 common kernel"
-            for branch in lineage-20 lineage-20-new lineage-19.1 main; do
-              echo "Trying universal7420 $branch"
-              rm -rf kernel.tar.gz *universal7420*
-              curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_universal7420/archive/refs/heads/$branch.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_universal7420-$branch/* kernel/ 2>/dev/null || mv *universal7420*/* kernel/ 2>/dev/null || true
-              if [ -f kernel/Makefile ]; then echo "Success universal7420 $branch"; break; fi
+              curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_exynos7420/archive/refs/heads/$branch.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-$branch/* kernel/ 2>/dev/null || mv android_kernel*/ * kernel/ 2>/dev/null || true
+              if [ -f kernel/Makefile ]; then echo "Success exynos7420 $branch"; break; fi
             done
           fi
           ls -lh kernel/ | head -30
           if [ ! -f kernel/Makefile ]; then echo "ERROR: All downloads failed"; ls -lh; exit 1; fi
-          ls kernel/arch/arm64/configs/ | grep -E "7420|zerolte" | head -20
+          ls kernel/arch/arm64/configs/ | grep -E "7420|zerolte|zeroflte" | head -20
 
       - name: Build kernel
         run: |

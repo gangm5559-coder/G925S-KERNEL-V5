@@ -1,0 +1,104 @@
+name: Build LOS23 Kernel zerolteskt G925S - v5 NO GIT AT ALL
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout self - no LFS no submodules
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+          fetch-depth: 1
+
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache /usr/local/lib/android /usr/share/swift /opt/az
+          df -h
+          ls -lh
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y bc bison build-essential curl flex wget libelf-dev libncurses5-dev libssl-dev python3 gcc-aarch64-linux-gnu device-tree-compiler cpio tar
+
+      - name: Restore boot parts
+        run: |
+          if ls boot_part_* 1>/dev/null 2>&1; then cat boot_part_* > boot.img; echo "Merged"; fi
+          ls -lh *.img 2>/dev/null || true
+
+      - name: Download kernel tarball - ZERO git command
+        run: |
+          rm -rf kernel.tar.gz kernel android_kernel*
+          mkdir -p kernel
+          # Try direct tarball downloads, NO git at all
+          echo "Trying samsungexynos7420 lineage-20.0..."
+          curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_exynos7420/archive/refs/heads/lineage-20.0.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-lineage-20.0/* kernel/ 2>/dev/null || true
+          if [ ! -f kernel/Makefile ]; then
+            echo "Trying lineage-21.0..."
+            rm -rf kernel.tar.gz android_kernel*
+            curl -L --retry 3 -f https://github.com/samsungexynos7420/android_kernel_samsung_exynos7420/archive/refs/heads/lineage-21.0.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-lineage-21.0/* kernel/ 2>/dev/null || true
+          fi
+          if [ ! -f kernel/Makefile ]; then
+            echo "Trying LineageOS lineage-20.0..."
+            rm -rf kernel.tar.gz android_kernel*
+            curl -L --retry 3 -f https://github.com/LineageOS/android_kernel_samsung_exynos7420/archive/refs/heads/lineage-20.0.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-lineage-20.0/* kernel/ 2>/dev/null || true
+          fi
+          if [ ! -f kernel/Makefile ]; then
+            echo "Trying LineageOS main via zip..."
+            rm -rf kernel.tar.gz android_kernel*
+            curl -L --retry 3 -f https://github.com/LineageOS/android_kernel_samsung_exynos7420/archive/main.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv android_kernel_samsung_exynos7420-main/* kernel/ 2>/dev/null || mv android_kernel_samsung_exynos7420-*/ * kernel/ 2>/dev/null || true
+          fi
+          # Final fallback: universal7420
+          if [ ! -f kernel/Makefile ]; then
+            echo "Trying universal7420..."
+            rm -rf kernel.tar.gz android_kernel*
+            curl -L --retry 3 -f https://github.com/LineageOS/android_kernel_samsung_universal7420/archive/lineage-20.0.tar.gz -o kernel.tar.gz && tar xzf kernel.tar.gz && mv *universal7420-*/ * kernel/ 2>/dev/null || true
+          fi
+          ls -lh kernel/ | head -30
+          if [ ! -f kernel/Makefile ]; then
+            echo "ERROR: All tarball downloads failed"
+            ls -lh
+            exit 1
+          fi
+          echo "Kernel downloaded OK"
+          ls kernel/arch/arm64/configs/ | grep 7420 || ls kernel/arch/arm64/configs/ | head -20
+
+      - name: Build kernel
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make exynos7420-zerolteskt_defconfig || make exynos7420-zeroltexx_defconfig || make exynos7420-zeroflte_defconfig || make exynos7420-zero_defconfig
+          make -j$(nproc --all) Image dtbs || make -j4 Image
+          mkdir -p ../out_kernel
+          cp arch/arm64/boot/Image ../out_kernel/ 2>/dev/null || cp arch/arm/boot/zImage ../out_kernel/ 2>/dev/null || true
+          find arch/arm64/boot/dts -name "*.dtb" -exec cp {} ../out_kernel/ \; 2>/dev/null || true
+          ls -lh ../out_kernel/
+
+      - name: Repack with magiskboot (download binary only)
+        run: |
+          curl -sL https://github.com/topjohnwu/Magisk/releases/download/v27.0/magisk-27.0.apk -o magisk.apk || true
+          unzip -q magisk.apk lib/arm64-v8a/libmagiskboot.so -d magisk_tmp 2>/dev/null || true
+          cp magisk_tmp/lib/arm64-v8a/libmagiskboot.so ./magiskboot 2>/dev/null || wget -q https://github.com/ooki/magiskboot_build/raw/master/magiskboot -O magiskboot || true
+          chmod +x magiskboot || true
+          if [ -f boot.img ] && [ -f ./magiskboot ]; then
+            ./magiskboot unpack boot.img || true
+            cp out_kernel/Image kernel 2>/dev/null || cp out_kernel/zImage kernel 2>/dev/null || true
+            ./magiskboot repack boot.img new-boot-lOS23-zerolteskt.img || true
+            mkdir -p out_final
+            cp new-boot*.img out_final/ 2>/dev/null || true
+          else
+            mkdir -p out_final
+            cp -r out_kernel/* out_final/ || true
+          fi
+          ls -lh out_final/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-los23-zerolteskt-G925S
+          path: out_final/
